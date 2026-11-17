@@ -1,0 +1,377 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user private profile stored under /users/{userId}/private/profile",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "displayName", "email", "createdAt", "updatedAt"]
+    },
+    "Workspace": {
+      "title": "Workspace",
+      "description": "Shared PinkFinance company workspace root document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "seeded": { "type": "boolean" },
+        "seedVersion": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "createdBy", "seeded", "seedVersion", "createdAt", "updatedAt"]
+    },
+    "WorkspaceMember": {
+      "title": "WorkspaceMember",
+      "description": "Authenticated admin member record in the shared workspace (foundation for future RBAC)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "workspaceId", "userId", "displayName", "role", "createdAt", "updatedAt"]
+    },
+    "ExchangeRates": {
+      "title": "ExchangeRates",
+      "description": "Shared workspace exchange rates for USD and EUR to TRY",
+      "type": "object",
+      "properties": {
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "USD": { "type": "number" },
+        "EUR": { "type": "number" },
+        "updatedAtLabel": { "type": "string", "maxLength": 20, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["workspaceId", "updatedBy", "USD", "EUR", "updatedAtLabel", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "PinkFinance B2B customer profile in shared workspace",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "companyName": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "contactPerson": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "maxLength": 160 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "taxOffice": { "type": "string", "maxLength": 100 },
+        "taxNumber": { "type": "string", "maxLength": 20 },
+        "contractStartDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "companyName",
+        "contactPerson",
+        "email",
+        "phone",
+        "taxOffice",
+        "taxNumber",
+        "contractStartDate",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Customer invoice supporting monthly MRR, annual deferred MRR, one-off, and hardware sales",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceNo": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "revenueModel": { "type": "string", "enum": ["monthly_mrr", "annual_mrr", "one_off", "hardware"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 500 },
+        "issueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "recognitionStartMonth": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "recognitionMonths": { "type": "number" },
+        "currency": { "type": "string", "enum": ["TRY", "USD", "EUR"] },
+        "amount": { "type": "number" },
+        "fxRateAtIssue": { "type": "number" },
+        "amountTry": { "type": "number" },
+        "linkedCogsTry": { "type": "number" },
+        "wonSaleId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceType": { "type": "string", "enum": ["sales", "refund"] },
+        "refundedInvoiceId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "refundSettlementMode": { "type": "string", "enum": ["bank_payout", "pending_payout", "receivable_offset"] },
+        "isDraft": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "invoiceNo",
+        "customerId",
+        "revenueModel",
+        "title",
+        "issueDate",
+        "dueDate",
+        "recognitionStartMonth",
+        "recognitionMonths",
+        "currency",
+        "amount",
+        "fxRateAtIssue",
+        "amountTry",
+        "isDraft",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Cash collection linked to an invoice and customer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "invoiceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "paymentDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["TRY", "USD", "EUR"] },
+        "fxRate": { "type": "number" },
+        "amountTry": { "type": "number" },
+        "bankAccount": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "paymentType": { "type": "string", "enum": ["collection", "refund"] },
+        "referenceNo": { "type": "string", "maxLength": 80 },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "invoiceId",
+        "customerId",
+        "paymentDate",
+        "amount",
+        "currency",
+        "fxRate",
+        "amountTry",
+        "bankAccount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Categorized company expense (COGS and OPEX) with multi-currency and recurring support",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "vendor": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "category": {
+          "type": "string",
+          "enum": [
+            "cogs",
+            "personnel",
+            "rent",
+            "office_general",
+            "representation",
+            "licenses",
+            "cloud",
+            "other_fixed"
+          ]
+        },
+        "expenseDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "paymentDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "currency": { "type": "string", "enum": ["TRY", "USD", "EUR"] },
+        "amount": { "type": "number" },
+        "fxRate": { "type": "number" },
+        "amountTry": { "type": "number" },
+        "status": { "type": "string", "enum": ["paid", "pending"] },
+        "isRecurring": { "type": "boolean" },
+        "bankAccount": { "type": "string", "maxLength": 80 },
+        "linkedInvoiceId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "title",
+        "vendor",
+        "category",
+        "expenseDate",
+        "dueDate",
+        "currency",
+        "amount",
+        "fxRate",
+        "amountTry",
+        "status",
+        "isRecurring",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "Company bank account with opening balance",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "bankName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "currency": { "type": "string", "enum": ["TRY", "USD", "EUR"] },
+        "openingBalanceTry": { "type": "number" },
+        "openingDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "name",
+        "bankName",
+        "currency",
+        "openingBalanceTry",
+        "openingDate",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "WonSale": {
+      "title": "WonSale",
+      "description": "Won customer deal / contract used to track recurring billing schedules and invoice readiness analysis",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "workspaceId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "revenueModel": { "type": "string", "enum": ["monthly_mrr", "annual_mrr", "one_off", "hardware"] },
+        "wonDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "contractStartDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "billingCycle": { "type": "string", "enum": ["monthly", "quarterly", "semi_annual", "annual", "one_time"] },
+        "firstInvoiceDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "nextInvoiceDateOverride": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "contractEndDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "autoRenew": { "type": "boolean" },
+        "currency": { "type": "string", "enum": ["TRY", "USD", "EUR"] },
+        "amount": { "type": "number" },
+        "fxRate": { "type": "number" },
+        "amountTry": { "type": "number" },
+        "linkedCogsTry": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "paused", "completed"] },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "workspaceId",
+        "createdBy",
+        "updatedBy",
+        "customerId",
+        "title",
+        "revenueModel",
+        "wonDate",
+        "contractStartDate",
+        "billingCycle",
+        "firstInvoiceDate",
+        "autoRenew",
+        "currency",
+        "amount",
+        "fxRate",
+        "amountTry",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/private/profile": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private Google profile metadata isolated per user"
+    },
+    "/workspaces/{workspaceId}": {
+      "schema": { "$ref": "#/entities/Workspace" },
+      "description": "Shared PinkFinance workspace root"
+    },
+    "/workspaces/{workspaceId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/WorkspaceMember" },
+      "description": "Admin members of the shared workspace (all authenticated users currently auto-enrolled as admin)"
+    },
+    "/workspaces/{workspaceId}/settings/exchangeRates": {
+      "schema": { "$ref": "#/entities/ExchangeRates" },
+      "description": "Shared USD/EUR to TRY exchange rates"
+    },
+    "/workspaces/{workspaceId}/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Shared PinkFinance customer cards"
+    },
+    "/workspaces/{workspaceId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Shared PinkFinance invoices linked to customers"
+    },
+    "/workspaces/{workspaceId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Shared PinkFinance cash collections linked to invoices and customers"
+    },
+    "/workspaces/{workspaceId}/expenses/{expenseId}": {
+      "schema": { "$ref": "#/entities/Expense" },
+      "description": "Shared PinkFinance categorized expenses"
+    },
+    "/workspaces/{workspaceId}/bankAccounts/{accountId}": {
+      "schema": { "$ref": "#/entities/BankAccount" },
+      "description": "Shared PinkFinance bank accounts"
+    },
+    "/workspaces/{workspaceId}/wonSales/{saleId}": {
+      "schema": { "$ref": "#/entities/WonSale" },
+      "description": "Shared PinkFinance won sales & recurring billing schedules"
+    }
+  }
+}

@@ -1,0 +1,621 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core identity & validation primitives
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isVerifiedUser()
+        && isValidId(userId)
+        && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidDate(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidMonth(val) {
+      return val is string && val.size() == 7 && val.matches('^\\d{4}-\\d{2}$');
+    }
+
+    function isValidCurrency(val) {
+      return val is string && val in ['TRY', 'USD', 'EUR'];
+    }
+
+    function isSupportedWorkspace(workspaceId) {
+      return workspaceId in ['pinkfinance', 'metaguard'];
+    }
+
+    function isWorkspaceAdmin(workspaceId) {
+      return isVerifiedUser()
+        && isSupportedWorkspace(workspaceId)
+        && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isWorkspaceAdminAfter(workspaceId) {
+      return isVerifiedUser()
+        && isSupportedWorkspace(workspaceId)
+        && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid))
+        && getAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/members/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Shared Workspace Entity Validation Blueprints
+    function isValidWorkspace(data, workspaceId) {
+      return data.keys().hasAll(['id', 'name', 'createdBy', 'seeded', 'seedVersion', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'createdBy', 'seeded', 'seedVersion', 'createdAt', 'updatedAt'])
+        && data.id == workspaceId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && isValidId(data.createdBy)
+        && data.seeded is bool
+        && data.seedVersion is number && data.seedVersion >= 1 && data.seedVersion <= 100
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidWorkspaceMember(data, workspaceId, memberId) {
+      return data.keys().hasAll(['id', 'workspaceId', 'userId', 'displayName', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'workspaceId', 'userId', 'displayName', 'role', 'createdAt', 'updatedAt'])
+        && data.id == memberId
+        && data.workspaceId == workspaceId
+        && data.userId == memberId
+        && data.userId == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.role is string && data.role in ['admin']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedExchangeRates(data, workspaceId) {
+      return data.keys().hasAll(['workspaceId', 'updatedBy', 'USD', 'EUR', 'updatedAtLabel', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['workspaceId', 'updatedBy', 'USD', 'EUR', 'updatedAtLabel', 'createdAt', 'updatedAt'])
+        && data.workspaceId == workspaceId
+        && data.updatedBy == request.auth.uid
+        && data.USD is number && data.USD > 0 && data.USD <= 10000
+        && data.EUR is number && data.EUR > 0 && data.EUR <= 10000
+        && isValidDate(data.updatedAtLabel)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedCustomer(data, workspaceId, customerId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'companyName', 'contactPerson', 'email', 'phone',
+          'taxOffice', 'taxNumber', 'contractStartDate', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'companyName', 'contactPerson', 'email', 'phone',
+          'taxOffice', 'taxNumber', 'contractStartDate', 'status', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.id == customerId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && data.companyName is string && data.companyName.size() >= 1 && data.companyName.size() <= 160
+        && data.contactPerson is string && data.contactPerson.size() >= 1 && data.contactPerson.size() <= 120
+        && data.email is string && data.email.size() <= 160
+        && data.phone is string && data.phone.size() <= 40
+        && data.taxOffice is string && data.taxOffice.size() <= 100
+        && data.taxNumber is string && data.taxNumber.size() <= 20
+        && isValidDate(data.contractStartDate)
+        && data.status is string && data.status in ['active', 'inactive']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedInvoice(data, workspaceId, invoiceId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'invoiceNo', 'customerId', 'revenueModel', 'title',
+          'issueDate', 'dueDate', 'recognitionStartMonth', 'recognitionMonths',
+          'currency', 'amount', 'fxRateAtIssue', 'amountTry', 'isDraft', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'invoiceNo', 'customerId', 'revenueModel', 'title', 'description',
+          'issueDate', 'dueDate', 'recognitionStartMonth', 'recognitionMonths',
+          'currency', 'amount', 'fxRateAtIssue', 'amountTry', 'linkedCogsTry', 'wonSaleId',
+          'invoiceType', 'refundedInvoiceId', 'refundSettlementMode',
+          'isDraft', 'createdAt', 'updatedAt'
+        ])
+        && data.id == invoiceId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && data.invoiceNo is string && data.invoiceNo.size() >= 1 && data.invoiceNo.size() <= 40
+        && isValidId(data.customerId)
+        && data.revenueModel is string && data.revenueModel in ['monthly_mrr', 'annual_mrr', 'one_off', 'hardware']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && (!('description' in data) || (data.description is string && data.description.size() <= 500))
+        && isValidDate(data.issueDate)
+        && isValidDate(data.dueDate)
+        && isValidMonth(data.recognitionStartMonth)
+        && data.recognitionMonths is number && data.recognitionMonths >= 1 && data.recognitionMonths <= 60
+        && isValidCurrency(data.currency)
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000000
+        && data.fxRateAtIssue is number && data.fxRateAtIssue > 0 && data.fxRateAtIssue <= 10000
+        && data.amountTry is number && data.amountTry > 0 && data.amountTry <= 1000000000
+        && (!('linkedCogsTry' in data) || (data.linkedCogsTry is number && data.linkedCogsTry >= 0 && data.linkedCogsTry <= 1000000000))
+        && (!('wonSaleId' in data) || isValidId(data.wonSaleId))
+        && (!('invoiceType' in data) || (data.invoiceType is string && data.invoiceType in ['sales', 'refund']))
+        && (!('refundedInvoiceId' in data) || isValidId(data.refundedInvoiceId))
+        && (!('refundSettlementMode' in data) || (data.refundSettlementMode is string && data.refundSettlementMode in ['bank_payout', 'pending_payout', 'receivable_offset']))
+        && data.isDraft is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedPayment(data, workspaceId, paymentId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'invoiceId', 'customerId', 'paymentDate',
+          'amount', 'currency', 'fxRate', 'amountTry', 'bankAccount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'invoiceId', 'customerId', 'paymentDate',
+          'amount', 'currency', 'fxRate', 'amountTry', 'bankAccount', 'paymentType',
+          'referenceNo', 'note', 'createdAt', 'updatedAt'
+        ])
+        && data.id == paymentId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && isValidId(data.invoiceId)
+        && isValidId(data.customerId)
+        && isValidDate(data.paymentDate)
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000000
+        && isValidCurrency(data.currency)
+        && data.fxRate is number && data.fxRate > 0 && data.fxRate <= 10000
+        && data.amountTry is number && data.amountTry > 0 && data.amountTry <= 1000000000
+        && data.bankAccount is string && data.bankAccount.size() >= 1 && data.bankAccount.size() <= 80
+        && (!('paymentType' in data) || (data.paymentType is string && data.paymentType in ['collection', 'refund']))
+        && (!('referenceNo' in data) || (data.referenceNo is string && data.referenceNo.size() <= 80))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 500))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedExpense(data, workspaceId, expenseId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'title', 'vendor', 'category', 'expenseDate', 'dueDate',
+          'currency', 'amount', 'fxRate', 'amountTry', 'status', 'isRecurring', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'title', 'vendor', 'category', 'expenseDate', 'dueDate',
+          'paymentDate', 'currency', 'amount', 'fxRate', 'amountTry', 'status',
+          'isRecurring', 'bankAccount', 'linkedInvoiceId', 'note', 'createdAt', 'updatedAt'
+        ])
+        && data.id == expenseId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.vendor is string && data.vendor.size() >= 1 && data.vendor.size() <= 120
+        && data.category is string && data.category in [
+          'cogs', 'personnel', 'rent', 'office_general',
+          'representation', 'licenses', 'cloud', 'other_fixed'
+        ]
+        && isValidDate(data.expenseDate)
+        && isValidDate(data.dueDate)
+        && (!('paymentDate' in data) || isValidDate(data.paymentDate))
+        && isValidCurrency(data.currency)
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000000
+        && data.fxRate is number && data.fxRate > 0 && data.fxRate <= 10000
+        && data.amountTry is number && data.amountTry > 0 && data.amountTry <= 1000000000
+        && data.status is string && data.status in ['paid', 'pending']
+        && data.isRecurring is bool
+        && (!('bankAccount' in data) || (data.bankAccount is string && data.bankAccount.size() <= 80))
+        && (!('linkedInvoiceId' in data) || isValidId(data.linkedInvoiceId))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 500))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedBankAccount(data, workspaceId, accountId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'name', 'bankName', 'currency',
+          'openingBalanceTry', 'openingDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'name', 'bankName', 'currency',
+          'openingBalanceTry', 'openingDate', 'createdAt', 'updatedAt'
+        ])
+        && data.id == accountId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.bankName is string && data.bankName.size() >= 1 && data.bankName.size() <= 80
+        && isValidCurrency(data.currency)
+        && data.openingBalanceTry is number && data.openingBalanceTry >= -1000000000 && data.openingBalanceTry <= 1000000000
+        && isValidDate(data.openingDate)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSharedWonSale(data, workspaceId, saleId) {
+      return data.keys().hasAll([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'customerId', 'title', 'revenueModel',
+          'wonDate', 'contractStartDate', 'billingCycle', 'firstInvoiceDate', 'autoRenew',
+          'currency', 'amount', 'fxRate', 'amountTry', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'workspaceId', 'createdBy', 'updatedBy', 'customerId', 'title', 'revenueModel',
+          'wonDate', 'contractStartDate', 'billingCycle', 'firstInvoiceDate', 'nextInvoiceDateOverride',
+          'contractEndDate', 'autoRenew', 'currency', 'amount', 'fxRate', 'amountTry',
+          'linkedCogsTry', 'status', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.id == saleId
+        && data.workspaceId == workspaceId
+        && isValidId(data.createdBy)
+        && data.updatedBy == request.auth.uid
+        && isValidId(data.customerId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 200
+        && data.revenueModel is string && data.revenueModel in ['monthly_mrr', 'annual_mrr', 'one_off', 'hardware']
+        && isValidDate(data.wonDate)
+        && isValidDate(data.contractStartDate)
+        && data.billingCycle is string && data.billingCycle in ['monthly', 'quarterly', 'semi_annual', 'annual', 'one_time']
+        && isValidDate(data.firstInvoiceDate)
+        && (!('nextInvoiceDateOverride' in data) || isValidDate(data.nextInvoiceDateOverride))
+        && (!('contractEndDate' in data) || isValidDate(data.contractEndDate))
+        && data.autoRenew is bool
+        && isValidCurrency(data.currency)
+        && data.amount is number && data.amount > 0 && data.amount <= 1000000000
+        && data.fxRate is number && data.fxRate > 0 && data.fxRate <= 10000
+        && data.amountTry is number && data.amountTry > 0 && data.amountTry <= 1000000000
+        && (!('linkedCogsTry' in data) || (data.linkedCogsTry is number && data.linkedCogsTry >= 0 && data.linkedCogsTry <= 1000000000))
+        && data.status is string && data.status in ['active', 'paused', 'completed']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Legacy Per-User Entity Validation Blueprints (kept for owner-only migration/cleanup)
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['ownerId', 'displayName', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'displayName', 'email', 'photoURL', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLegacyWorkspaceMeta(data, userId) {
+      return data.keys().hasAll(['ownerId', 'seeded', 'seedVersion', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'seeded', 'seedVersion', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.seeded is bool
+        && data.seedVersion is number && data.seedVersion >= 1 && data.seedVersion <= 100
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Shared PinkFinance Admin Workspace (Full Open Admin Access for Verified Users)
+    match /workspaces/{workspaceId} {
+      allow get: if isVerifiedUser() && isSupportedWorkspace(workspaceId);
+      allow create: if isVerifiedUser()
+        && workspaceId == 'pinkfinance'
+        && isValidWorkspace(incoming(), workspaceId)
+        && incoming().createdBy == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isWorkspaceAdminAfter(workspaceId);
+      allow update: if isWorkspaceAdmin(workspaceId)
+        && isValidWorkspace(incoming(), workspaceId)
+        && incoming().id == existing().id
+        && incoming().createdBy == existing().createdBy
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'seeded', 'seedVersion', 'updatedAt']);
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow get: if isVerifiedUser() && isSupportedWorkspace(workspaceId) && isValidId(memberId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isVerifiedOwner(memberId)
+          && workspaceId == 'pinkfinance'
+          && isValidWorkspaceMember(incoming(), workspaceId, memberId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(memberId)
+          && isSupportedWorkspace(workspaceId)
+          && isValidWorkspaceMember(incoming(), workspaceId, memberId)
+          && incoming().id == existing().id
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().userId == existing().userId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'role', 'updatedAt']);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(memberId);
+      }
+
+      match /settings/exchangeRates {
+        allow get: if isVerifiedUser() && isSupportedWorkspace(workspaceId);
+        allow create: if isWorkspaceAdminAfter(workspaceId)
+          && isValidSharedExchangeRates(incoming(), workspaceId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidSharedExchangeRates(incoming(), workspaceId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['USD', 'EUR', 'updatedAtLabel', 'updatedBy', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /customers/{customerId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(customerId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(customerId)
+          && isValidSharedCustomer(incoming(), workspaceId, customerId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(customerId)
+          && isValidSharedCustomer(incoming(), workspaceId, customerId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'companyName', 'contactPerson', 'email', 'phone',
+            'taxOffice', 'taxNumber', 'contractStartDate', 'status', 'notes', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(customerId);
+      }
+
+      match /invoices/{invoiceId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(invoiceId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(invoiceId)
+          && isValidSharedInvoice(incoming(), workspaceId, invoiceId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId))
+          && (!('refundedInvoiceId' in incoming())
+            || existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().refundedInvoiceId)));
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(invoiceId)
+          && isValidSharedInvoice(incoming(), workspaceId, invoiceId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId))
+          && (!('refundedInvoiceId' in incoming())
+            || existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().refundedInvoiceId)))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'invoiceNo', 'customerId', 'revenueModel', 'title', 'description',
+            'issueDate', 'dueDate', 'recognitionStartMonth', 'recognitionMonths',
+            'currency', 'amount', 'fxRateAtIssue', 'amountTry', 'linkedCogsTry', 'wonSaleId',
+            'invoiceType', 'refundedInvoiceId', 'refundSettlementMode',
+            'isDraft', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(invoiceId);
+      }
+
+      match /payments/{paymentId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(paymentId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(paymentId)
+          && isValidSharedPayment(incoming(), workspaceId, paymentId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().invoiceId))
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId));
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(paymentId)
+          && isValidSharedPayment(incoming(), workspaceId, paymentId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().invoiceId))
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'invoiceId', 'customerId', 'paymentDate', 'amount', 'currency',
+            'fxRate', 'amountTry', 'bankAccount', 'paymentType', 'referenceNo', 'note', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(paymentId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(expenseId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(expenseId)
+          && isValidSharedExpense(incoming(), workspaceId, expenseId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (!('linkedInvoiceId' in incoming())
+            || existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().linkedInvoiceId)));
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(expenseId)
+          && isValidSharedExpense(incoming(), workspaceId, expenseId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (!('linkedInvoiceId' in incoming())
+            || existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/invoices/$(incoming().linkedInvoiceId)))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'vendor', 'category', 'expenseDate', 'dueDate', 'paymentDate',
+            'currency', 'amount', 'fxRate', 'amountTry', 'status', 'isRecurring',
+            'bankAccount', 'linkedInvoiceId', 'note', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(expenseId);
+      }
+
+      match /bankAccounts/{accountId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(accountId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(accountId)
+          && isValidSharedBankAccount(incoming(), workspaceId, accountId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(accountId)
+          && isValidSharedBankAccount(incoming(), workspaceId, accountId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'bankName', 'currency', 'openingBalanceTry', 'openingDate', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(accountId);
+      }
+
+      match /wonSales/{saleId} {
+        allow get: if isWorkspaceAdmin(workspaceId) && isValidId(saleId);
+        allow list: if isVerifiedUser()
+          && isSupportedWorkspace(workspaceId)
+          && existing().workspaceId == workspaceId;
+        allow create: if isWorkspaceAdmin(workspaceId)
+          && isValidId(saleId)
+          && isValidSharedWonSale(incoming(), workspaceId, saleId)
+          && incoming().createdBy == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId));
+        allow update: if isWorkspaceAdmin(workspaceId)
+          && isValidId(saleId)
+          && isValidSharedWonSale(incoming(), workspaceId, saleId)
+          && incoming().workspaceId == existing().workspaceId
+          && incoming().id == existing().id
+          && incoming().createdBy == existing().createdBy
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && existsAfter(/databases/$(database)/documents/workspaces/$(workspaceId)/customers/$(incoming().customerId))
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'customerId', 'title', 'revenueModel', 'wonDate', 'contractStartDate',
+            'billingCycle', 'firstInvoiceDate', 'nextInvoiceDateOverride', 'contractEndDate',
+            'autoRenew', 'currency', 'amount', 'fxRate', 'amountTry', 'linkedCogsTry',
+            'status', 'notes', 'updatedBy', 'updatedAt'
+          ]);
+        allow delete: if isWorkspaceAdmin(workspaceId) && isValidId(saleId);
+      }
+    }
+
+    // User Workspace Root & Isolated PII Profile (plus legacy user data cleanup/migration)
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /private/profile {
+        allow get: if isVerifiedOwner(userId);
+        allow create: if isVerifiedOwner(userId)
+          && isValidUserProfile(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidUserProfile(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoURL', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /settings/workspace {
+        allow get: if isVerifiedOwner(userId);
+        allow create: if isVerifiedOwner(userId)
+          && isValidLegacyWorkspaceMeta(incoming(), userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isVerifiedOwner(userId)
+          && isValidLegacyWorkspaceMeta(incoming(), userId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['seeded', 'seedVersion', 'updatedAt']);
+        allow delete: if false;
+      }
+
+      match /settings/exchangeRates {
+        allow get: if isVerifiedOwner(userId);
+        allow delete: if isVerifiedOwner(userId);
+      }
+
+      match /customers/{customerId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(customerId);
+        allow list: if isVerifiedOwner(userId) && existing().ownerId == userId;
+        allow delete: if isVerifiedOwner(userId) && isValidId(customerId);
+      }
+
+      match /invoices/{invoiceId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(invoiceId);
+        allow list: if isVerifiedOwner(userId) && existing().ownerId == userId;
+        allow delete: if isVerifiedOwner(userId) && isValidId(invoiceId);
+      }
+
+      match /payments/{paymentId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(paymentId);
+        allow list: if isVerifiedOwner(userId) && existing().ownerId == userId;
+        allow delete: if isVerifiedOwner(userId) && isValidId(paymentId);
+      }
+
+      match /expenses/{expenseId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(expenseId);
+        allow list: if isVerifiedOwner(userId) && existing().ownerId == userId;
+        allow delete: if isVerifiedOwner(userId) && isValidId(expenseId);
+      }
+
+      match /bankAccounts/{accountId} {
+        allow get: if isVerifiedOwner(userId) && isValidId(accountId);
+        allow list: if isVerifiedOwner(userId) && existing().ownerId == userId;
+        allow delete: if isVerifiedOwner(userId) && isValidId(accountId);
+      }
+    }
+  }
+}
